@@ -586,6 +586,7 @@ function set3DMode(enabled) {
           'fill-extrusion-opacity': 0.35,
         },
       });
+    });
   } else {
     map3d.resize();
     map3d.easeTo({ center: centerLngLat, zoom: 18, pitch: 55, bearing: -20, duration: 500 });
