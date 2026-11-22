@@ -868,85 +868,75 @@ function set3DMode(enabled) {
 
     function locateUserYard() {
   if (!navigator.geolocation) {
-    showToast('MapleCookie: Geolocation not supported in this browser');
+    showToast('MapleCookie: Geolocation is not supported in this browser');
     return;
   }
 
-  if (state.locateWatchId !== null) {
-    navigator.geolocation.clearWatch(state.locateWatchId);
-  }
-  if (state.locateStatusTimer !== null) {
-    clearInterval(state.locateStatusTimer);
-  }
-
+  const MAX_ACCURACY_METERS = 50;
   let hasCenteredOnce = false;
   let hasCreatedYard = false;
   let gotAnyFix = false;
   let elapsedSec = 0;
 
-  const applyLocation = (pos, isImmediateSnap = false) => {
-    gotAnyFix = true;
-    const lat = pos.coords.latitude;
-    const lng = pos.coords.longitude;
-    const accuracy = pos.coords.accuracy;
+  // Immediate feedback so you know it started
+  showToast('MapleCookie: Scanning for GPS signal (0s)...');
 
-    setDogPosition(lat, lng);
-
-    if (!hasCenteredOnce) {
-      map.setView([lat, lng], 19);
-      if (map3d) {
-        map3d.jumpTo({ center: [lng, lat], zoom: 18, pitch: 55, bearing: -20 });
-      }
-      if (!hasCreatedYard) {
-        createDefaultPolygonAroundCenter([lat, lng]);
-        hasCreatedYard = true;
-      }
-      hasCenteredOnce = true;
-      clearInterval(state.locateStatusTimer);
-    } else if (!isImmediateSnap && typeof accuracy === 'number' && accuracy <= 25) {
-      map.panTo([lat, lng]);
-    }
-
-    const accText = typeof accuracy === 'number' ? ` (~${Math.round(accuracy)}m)` : '';
-    showToast(`MapleCookie: Moved to location${accText}`);
-  };
-
-  showToast('MapleCookie: Locating your yard (0s)...');
-
-  // 1) Fast initial fix so the map moves right away
-  navigator.geolocation.getCurrentPosition(
-    (pos) => applyLocation(pos, true),
-    () => {},
-    { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
-  );
-
-  // 2) Live "not stuck" timer if GPS takes a few seconds
-  state.locateStatusTimer = setInterval(() => {
+  // Periodic heartbeat message while waiting for a valid/accurate fix
+  const statusTimer = setInterval(() => {
     elapsedSec += 3;
     if (!hasCenteredOnce) {
-      const stage = gotAnyFix ? 'applying GPS fix' : 'waiting for GPS signal';
-      showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
+      const stateText = gotAnyFix
+        ? 'refining GPS accuracy'
+        : 'searching for GPS lock';
+      showToast(`MapleCookie: Still ${stateText}... (${elapsedSec}s)`);
     } else {
-      clearInterval(state.locateStatusTimer);
+      clearInterval(statusTimer);
     }
   }, 3000);
 
-  // 3) High-accuracy watch to refine position
-  state.locateWatchId = navigator.geolocation.watchPosition(
-    (pos) => applyLocation(pos, false),
+  const watchId = navigator.geolocation.watchPosition(
+    (pos) => {
+      gotAnyFix = true;
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy;
+
+      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
+        showToast(
+          `MapleCookie: GPS signal found (~${Math.round(accuracy)}m) — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
+        );
+        return;
+      }
+
+      clearInterval(statusTimer);
+
+      if (!hasCenteredOnce) {
+        map.setView([lat, lng], 19);
+        hasCenteredOnce = true;
+      }
+
+      if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
+        createDefaultPolygonAroundCenter([lat, lng]);
+        hasCreatedYard = true;
+      }
+
+      showToast(`MapleCookie: Locked onto location (~${Math.round(accuracy)}m accuracy)`);
+    },
     (err) => {
-      if (!gotAnyFix) {
-        clearInterval(state.locateStatusTimer);
-        if (err.code === err.PERMISSION_DENIED) {
-          showToast('MapleCookie: Location permission denied — staying put');
-        } else if (err.code === err.TIMEOUT) {
-          showToast('MapleCookie: GPS timed out — staying put');
-        } else {
-          showToast('MapleCookie: Could not read GPS — staying put');
-        }
+      clearInterval(statusTimer);
+      if (err.code === err.PERMISSION_DENIED) {
+        showToast('MapleCookie: Location permission denied — staying on current map');
+      } else if (err.code === err.TIMEOUT) {
+        showToast('MapleCookie: GPS scan timed out — staying on current map');
+      } else {
+        showToast('MapleCookie: Unable to read GPS right now — staying on current map');
       }
     },
-    { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0
+    }
   );
 }
 
