@@ -846,25 +846,53 @@
     }
 
     function locateUserYard() {
-      if (!navigator.geolocation) {
-        showToast('Geolocation not supported in this browser');
+  if (!navigator.geolocation) {
+    showToast('Geolocation not supported in this browser');
+    return;
+  }
+
+  const MAX_ACCURACY_METERS = 50; // Ignore coarse IP/cell fixes worse than 50m
+  let hasCenteredOnce = false;
+  let hasCreatedYard = false;
+
+  showToast('Waiting for accurate GPS fix...');
+
+  navigator.geolocation.watchPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const accuracy = pos.coords.accuracy; // in meters
+
+      // Only show/use position once accuracy is reasonable
+      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
+        showToast(`GPS accuracy ~${Math.round(accuracy)}m — waiting for tighter lock...`);
         return;
       }
-      showToast('Locating your GPS position...');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          map.setView([lat, lng], 19);
-          createDefaultPolygonAroundCenter([lat, lng]);
-          showToast('Centered on your yard! Adjust corners as needed.');
-        },
-        () => {
-          showToast('Location permission denied — staying on demo yard');
-        },
-        { enableHighAccuracy: true, timeout: 7000 }
-      );
+
+      if (!hasCenteredOnce) {
+        map.setView([lat, lng], 19);
+        hasCenteredOnce = true;
+      }
+
+      // Only create the default yard once on initial lock so reloads don't wipe custom corners
+      if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
+        createDefaultPolygonAroundCenter([lat, lng]);
+        hasCreatedYard = true;
+      }
+
+      showToast(`Locked within ~${Math.round(accuracy)}m`);
+    },
+    (err) => {
+      // Do NOT move the map or overwrite anything if permission is denied or times out
+      showToast('Could not get accurate GPS — staying put');
+    },
+    {
+      enableHighAccuracy: true,
+      timeout: 15000,
+      maximumAge: 0
     }
+  );
+}
 
     // =========================================================================
     // 5. POINT-IN-POLYGON & EDGE DISTANCE GEOFENCE ENGINE
