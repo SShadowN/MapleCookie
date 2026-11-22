@@ -895,7 +895,7 @@
       }
 
       showToast(`Locked within ~${Math.round(accuracy)}m`);
-    },
+    }
     (err) => {
       // Do NOT move the map or overwrite anything if permission is denied or times out
       showToast('Could not get accurate GPS — staying put');
