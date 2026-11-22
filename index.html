@@ -503,111 +503,91 @@
       set3DMode(!state.is3D);
     }
 
-    function set3DMode(enabled) {
-      state.is3D = enabled;
-      const map3dEl = document.getElementById('map3d');
-      const btn3d = document.getElementById('btnLayer3D');
-      const label3d = document.getElementById('btnLayer3DLabel');
+function set3DMode(enabled) {
+  state.is3D = enabled;
+  const map3dEl = document.getElementById('map3d');
+  const btn3d = document.getElementById('btnLayer3D');
+  const label3d = document.getElementById('btnLayer3DLabel');
 
-      label3d.textContent = enabled ? '3D View: On' : '3D View: Off';
-      btn3d.className = enabled
-        ? 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white shadow-sm transition'
-        : 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+  label3d.textContent = enabled ? '3D Sat: On' : '3D Sat: Off';
+  btn3d.className = enabled
+    ? 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white shadow-sm transition'
+    : 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
 
-      if (!enabled) {
-        map3dEl.style.display = 'none';
-        map.invalidateSize();
-        syncLeafletToDog();
-        return;
-      }
+  if (!enabled) {
+    map3dEl.style.display = 'none';
+    map.invalidateSize();
+    syncLeafletToDog();
+    return;
+  }
 
-      map3dEl.style.display = 'block';
-      const centerLngLat = [state.dogPos.lng, state.dogPos.lat];
+  map3dEl.style.display = 'block';
+  const centerLngLat = [state.dogPos.lng, state.dogPos.lat];
 
-      if (!map3d) {
-        map3d = new maplibregl.Map({
-          container: 'map3d',
-          style: 'https://tiles.openfreemap.org/styles/liberty',
-          center: centerLngLat,
-          zoom: 17.5,
-          pitch: 55,
-          bearing: -20,
-          antialias: true,
-        });
-
-        map3d.addControl(
-          new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }),
-          'top-right'
-        );
-
-        map3d.on('load', () => {
-          const layers = map3d.getStyle().layers || [];
-          let labelLayerId;
-          for (const layer of layers) {
-            if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
-              labelLayerId = layer.id;
-              break;
-            }
+  if (!map3d) {
+    map3d = new maplibregl.Map({
+      container: 'map3d',
+      style: {
+        version: 8,
+        sources: {
+          'esri-satellite': {
+            type: 'raster',
+            tiles: [
+              'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+            ],
+            tileSize: 256,
+            maxzoom: 19,
+            attribution: 'Tiles © Esri'
           }
-
-          if (map3d.getSource('openfreemap')) {
-            map3d.addLayer(
-              {
-                id: 'maplecookie-3d-buildings',
-                source: 'openfreemap',
-                'source-layer': 'building',
-                filter: ['!=', ['get', 'hide_3d'], true],
-                type: 'fill-extrusion',
-                minzoom: 15,
-                paint: {
-                  'fill-extrusion-color': [
-                    'interpolate',
-                    ['linear'],
-                    ['get', 'render_height'],
-                    0, '#cbd5e1',
-                    15, '#94a3b8',
-                    50, '#64748b',
-                  ],
-                  'fill-extrusion-height': [
-                    'interpolate',
-                    ['linear'],
-                    ['zoom'],
-                    15, 0,
-                    16, ['get', 'render_height'],
-                  ],
-                  'fill-extrusion-base': ['get', 'render_min_height'],
-                  'fill-extrusion-opacity': 0.78,
-                },
-              },
-              labelLayerId
-            );
+        },
+        layers: [
+          {
+            id: 'esri-satellite-layer',
+            type: 'raster',
+            source: 'esri-satellite',
+            minzoom: 0,
+            maxzoom: 22
           }
+        ]
+      },
+      center: centerLngLat,
+      zoom: 18,
+      pitch: 55,
+      bearing: -20,
+      antialias: true,
+    });
 
-          map3d.addSource('fence3d', {
-            type: 'geojson',
-            data: buildFenceGeoJson(),
-          });
+    map3d.addControl(
+      new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }),
+      'top-right'
+    );
 
-          map3d.addLayer({
-            id: 'fence3d-fill',
-            type: 'fill',
-            source: 'fence3d',
-            paint: { 'fill-color': '#10b981', 'fill-opacity': 0.18 },
-          });
+    map3d.on('load', () => {
+      map3d.addSource('fence3d', {
+        type: 'geojson',
+        data: buildFenceGeoJson(),
+      });
 
-          map3d.addLayer({
-            id: 'fence3d-line',
-            type: 'line',
-            source: 'fence3d',
-            paint: { 'line-color': '#10b981', 'line-width': 3 },
-          });
-        });
-      } else {
-        map3d.resize();
-        map3d.easeTo({ center: centerLngLat, zoom: 17.5, pitch: 55, bearing: -20, duration: 500 });
-        syncFenceTo3D();
-      }
-    }
+      map3d.addLayer({
+        id: 'fence3d-fill',
+        type: 'fill',
+        source: 'fence3d',
+        paint: { 'fill-color': '#10b981', 'fill-opacity': 0.2 },
+      });
+
+      map3d.addLayer({
+        id: 'fence3d-line',
+        type: 'line',
+        source: 'fence3d',
+        paint: { 'line-color': '#10b981', 'line-width': 3 },
+      });
+    });
+  } else {
+    map3d.resize();
+    map3d.easeTo({ center: centerLngLat, zoom: 18, pitch: 55, bearing: -20, duration: 500 });
+    syncFenceTo3D();
+  }
+}
 
     function buildFenceGeoJson() {
       if (state.fenceVertices.length < 3) {
@@ -887,77 +867,88 @@
     }
 
     function locateUserYard() {
-      if (!navigator.geolocation) {
-        showToast('MapleCookie: Geolocation not supported in this browser');
-        return;
+  if (!navigator.geolocation) {
+    showToast('MapleCookie: Geolocation not supported in this browser');
+    return;
+  }
+
+  if (state.locateWatchId !== null) {
+    navigator.geolocation.clearWatch(state.locateWatchId);
+  }
+  if (state.locateStatusTimer !== null) {
+    clearInterval(state.locateStatusTimer);
+  }
+
+  let hasCenteredOnce = false;
+  let hasCreatedYard = false;
+  let gotAnyFix = false;
+  let elapsedSec = 0;
+
+  const applyLocation = (pos, isImmediateSnap = false) => {
+    gotAnyFix = true;
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const accuracy = pos.coords.accuracy;
+
+    setDogPosition(lat, lng);
+
+    if (!hasCenteredOnce) {
+      map.setView([lat, lng], 19);
+      if (map3d) {
+        map3d.jumpTo({ center: [lng, lat], zoom: 18, pitch: 55, bearing: -20 });
       }
-
-      if (state.locateWatchId !== null) {
-        navigator.geolocation.clearWatch(state.locateWatchId);
+      if (!hasCreatedYard) {
+        createDefaultPolygonAroundCenter([lat, lng]);
+        hasCreatedYard = true;
       }
-      if (state.locateStatusTimer !== null) {
-        clearInterval(state.locateStatusTimer);
-      }
-
-      const MAX_ACCURACY_METERS = 50;
-      let hasCenteredOnce = false;
-      let hasCreatedYard = false;
-      let gotAnyFix = false;
-      let elapsedSec = 0;
-
-      showToast('MapleCookie: Scanning for GPS signal (0s)...');
-
-      state.locateStatusTimer = setInterval(() => {
-        elapsedSec += 3;
-        if (!hasCenteredOnce) {
-          const stage = gotAnyFix ? 'refining GPS accuracy' : 'searching for GPS lock';
-          showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
-        } else {
-          clearInterval(state.locateStatusTimer);
-        }
-      }, 3000);
-
-      state.locateWatchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          gotAnyFix = true;
-          const lat = pos.coords.latitude;
-          const lng = pos.coords.longitude;
-          const accuracy = pos.coords.accuracy;
-
-          if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
-            showToast(
-              `MapleCookie: GPS accuracy ~${Math.round(accuracy)}m — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
-            );
-            return;
-          }
-
-          clearInterval(state.locateStatusTimer);
-
-          if (!hasCenteredOnce) {
-            map.setView([lat, lng], 19);
-            setDogPosition(lat, lng);
-            if (!hasCreatedYard) {
-              createDefaultPolygonAroundCenter([lat, lng]);
-              hasCreatedYard = true;
-            }
-            hasCenteredOnce = true;
-          }
-
-          showToast(`MapleCookie: Locked onto location (~${Math.round(accuracy)}m)`);
-        },
-        (err) => {
-          clearInterval(state.locateStatusTimer);
-          if (err.code === err.PERMISSION_DENIED) {
-            showToast('MapleCookie: Location permission denied — staying put');
-          } else if (err.code === err.TIMEOUT) {
-            showToast('MapleCookie: GPS scan timed out — staying put');
-          } else {
-            showToast('MapleCookie: Unable to read GPS right now — staying put');
-          }
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
+      hasCenteredOnce = true;
+      clearInterval(state.locateStatusTimer);
+    } else if (!isImmediateSnap && typeof accuracy === 'number' && accuracy <= 25) {
+      map.panTo([lat, lng]);
     }
+
+    const accText = typeof accuracy === 'number' ? ` (~${Math.round(accuracy)}m)` : '';
+    showToast(`MapleCookie: Moved to location${accText}`);
+  };
+
+  showToast('MapleCookie: Locating your yard (0s)...');
+
+  // 1) Fast initial fix so the map moves right away
+  navigator.geolocation.getCurrentPosition(
+    (pos) => applyLocation(pos, true),
+    () => {},
+    { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 }
+  );
+
+  // 2) Live "not stuck" timer if GPS takes a few seconds
+  state.locateStatusTimer = setInterval(() => {
+    elapsedSec += 3;
+    if (!hasCenteredOnce) {
+      const stage = gotAnyFix ? 'applying GPS fix' : 'waiting for GPS signal';
+      showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
+    } else {
+      clearInterval(state.locateStatusTimer);
+    }
+  }, 3000);
+
+  // 3) High-accuracy watch to refine position
+  state.locateWatchId = navigator.geolocation.watchPosition(
+    (pos) => applyLocation(pos, false),
+    (err) => {
+      if (!gotAnyFix) {
+        clearInterval(state.locateStatusTimer);
+        if (err.code === err.PERMISSION_DENIED) {
+          showToast('MapleCookie: Location permission denied — staying put');
+        } else if (err.code === err.TIMEOUT) {
+          showToast('MapleCookie: GPS timed out — staying put');
+        } else {
+          showToast('MapleCookie: Could not read GPS — staying put');
+        }
+      }
+    },
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+  );
+}
 
     // GEOFENCE MATH & ALERTS
     function isPointInPolygon(lat, lng, poly) {
