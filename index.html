@@ -830,67 +830,132 @@
       }
     }
 
-    function recallDogToCenter() {
-      if (state.autoWalk) toggleAutoWalk();
-      const center = state.fenceVertices.length >= 3
-        ? getPolygonCentroid(state.fenceVertices)
-        : [map.getCenter().lat, map.getCenter().lng];
-      dogTrailCoords = [];
-      setDogPosition(center[0], center[1]);
-      map.panTo(center);
-      addLog('Dog recalled to center of safe yard.', 'safe');
-    }
+    function clearDogTrail(lat = state.dogPos.lat, lng = state.dogPos.lng) {
+  dogTrailCoords = [[Number(lat.toFixed(6)), Number(lng.toFixed(6))]];
+  if (dogTrailPolyline) {
+    dogTrailPolyline.setLatLngs(dogTrailCoords);
+  }
+}
 
-    function centerOnDog() {
-      map.setView([state.dogPos.lat, state.dogPos.lng], 19);
-    }
+function setDogPosition(lat, lng, resetTrail = false) {
+  state.dogPos = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
+  if (dogMarker) {
+    dogMarker.setLatLng([state.dogPos.lat, state.dogPos.lng]);
+  }
 
-    function locateUserYard() {
+  if (resetTrail) {
+    clearDogTrail(state.dogPos.lat, state.dogPos.lng);
+  } else {
+    dogTrailCoords.push([state.dogPos.lat, state.dogPos.lng]);
+    if (dogTrailCoords.length > 60) dogTrailCoords.shift();
+    if (dogTrailPolyline) {
+      dogTrailPolyline.setLatLngs(dogTrailCoords);
+    }
+  }
+
+  document.getElementById('headerCoords').textContent =
+    `${state.dogPos.lat.toFixed(4)}, ${state.dogPos.lng.toFixed(4)}`;
+
+  evaluateGeofence();
+}
+
+function recallDogToCenter() {
+  const center = state.fenceVertices.length >= 3
+    ? getPolygonCentroid(state.fenceVertices)
+    : DEFAULT_CENTER;
+  // Pass true so recalling doesn't draw a jump line across the map
+  setDogPosition(center[0], center[1], true);
+  map.setView([center[0], center[1]], 19);
+  addLog('Dog recalled to yard center.', 'info');
+}
+
+function locateUserYard() {
   if (!navigator.geolocation) {
-    showToast('Geolocation not supported in this browser');
+    showToast('MapleCookie: Geolocation not supported in this browser');
     return;
   }
 
-  const MAX_ACCURACY_METERS = 50; // Ignore coarse IP/cell fixes worse than 50m
+  if (state.locateWatchId !== null) {
+    navigator.geolocation.clearWatch(state.locateWatchId);
+    state.locateWatchId = null;
+  }
+  if (state.locateStatusTimer !== null) {
+    clearInterval(state.locateStatusTimer);
+    state.locateStatusTimer = null;
+  }
+
   let hasCenteredOnce = false;
   let hasCreatedYard = false;
+  let gotAnyFix = false;
+  let elapsedSec = 0;
 
-  showToast('Waiting for accurate GPS fix...');
+  const stopStatusTimer = () => {
+    if (state.locateStatusTimer !== null) {
+      clearInterval(state.locateStatusTimer);
+      state.locateStatusTimer = null;
+    }
+  };
 
-  navigator.geolocation.watchPosition(
-    (pos) => {
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy; // in meters
+  const applyPosition = (pos, isQuickFix = false) => {
+    gotAnyFix = true;
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const accuracy = pos.coords.accuracy;
 
-      // Only show/use position once accuracy is reasonable
-      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
-        showToast(`GPS accuracy ~${Math.round(accuracy)}m — waiting for tighter lock...`);
-        return;
-      }
+    if (!hasCenteredOnce) {
+      hasCenteredOnce = true;
+      stopStatusTimer();
+      map.setView([lat, lng], 19, { animate: false });
 
-      if (!hasCenteredOnce) {
-        map.setView([lat, lng], 19);
-        hasCenteredOnce = true;
-      }
+      // Reset trail on initial jump so no line stretches from DEFAULT_CENTER
+      setDogPosition(lat, lng, true);
 
-      // Only create the default yard once on initial lock so reloads don't wipe custom corners
-      if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
+      if (!hasCreatedYard) {
         createDefaultPolygonAroundCenter([lat, lng]);
+        clearDogTrail(lat, lng);
         hasCreatedYard = true;
       }
-
-      showToast(`Locked within ~${Math.round(accuracy)}m`);
-    },
-    (err) => {
-      // Do NOT move the map or overwrite anything if permission is denied or times out
-      showToast('Could not get accurate GPS — staying put');
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
+    } else {
+      // Normal movement after initial lock draws the walking trail
+      setDogPosition(lat, lng, false);
+      if (!isQuickFix && typeof accuracy === 'number' && accuracy <= 30) {
+        map.panTo([lat, lng]);
+      }
     }
+
+    const accLabel = typeof accuracy === 'number' ? ` (~${Math.round(accuracy)}m)` : '';
+    showToast(`MapleCookie: Yard location updated${accLabel}`);
+  };
+
+  const handleError = (err, source) => {
+    addLog(`GPS (${source}): ${err.message || 'Location error'} (code ${err.code})`, 'warn');
+    if (!gotAnyFix) {
+      stopStatusTimer();
+      showToast('MapleCookie: Unable to read location — staying put');
+    }
+  };
+
+  showToast('MapleCookie: Finding your yard (0s)...');
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => applyPosition(pos, true),
+    (err) => handleError(err, 'quick'),
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+  );
+
+  state.locateStatusTimer = setInterval(() => {
+    elapsedSec += 3;
+    if (!hasCenteredOnce) {
+      showToast(`MapleCookie: Still locating... (${elapsedSec}s)`);
+    } else {
+      stopStatusTimer();
+    }
+  }, 3000);
+
+  state.locateWatchId = navigator.geolocation.watchPosition(
+    (pos) => applyPosition(pos, false),
+    (err) => handleError(err, 'watch'),
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
   );
 }
 
