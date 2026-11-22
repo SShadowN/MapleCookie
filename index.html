@@ -847,33 +847,47 @@
 
     function locateUserYard() {
   if (!navigator.geolocation) {
-    showToast('Geolocation not supported in this browser');
+    showToast('MapleCookie: Geolocation not supported in this browser');
     return;
   }
 
   const MAX_ACCURACY_METERS = 50; // Ignore coarse IP/cell fixes worse than 50m
   let hasCenteredOnce = false;
   let hasCreatedYard = false;
+  let gotAnyFix = false;
+  let elapsedSec = 0;
 
-  showToast('Waiting for accurate GPS fix...');
+  showToast('MapleCookie: Scanning for GPS signal (0s)...');
+
+  const statusTimer = setInterval(() => {
+    elapsedSec += 3;
+    if (!hasCenteredOnce) {
+      const stage = gotAnyFix ? 'refining GPS accuracy' : 'waiting for GPS fix';
+      showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
+    } else {
+      clearInterval(statusTimer);
+    }
+  }, 3000);
 
   navigator.geolocation.watchPosition(
     (pos) => {
+      gotAnyFix = true;
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       const accuracy = pos.coords.accuracy; // in meters
 
       // Only show/use position once accuracy is reasonable
       if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
-        showToast(`GPS accuracy ~${Math.round(accuracy)}m — waiting for tighter lock...`);
+        showToast(
+          `MapleCookie: GPS accuracy ~${Math.round(accuracy)}m — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
+        );
         return;
       }
 
-      if (!hasCenteredOnce) {
-        map.setView([lat, lng], 19);
-        hasCenteredOnce = true;
-      }
+      clearInterval(statusTimer);
 
+      if (!hasCenteredOnce) {
+        // ...keep your existing centering & yard creation code right here...
       // Only create the default yard once on initial lock so reloads don't wipe custom corners
       if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
         createDefaultPolygonAroundCenter([lat, lng]);
