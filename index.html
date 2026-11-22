@@ -576,12 +576,16 @@ function set3DMode(enabled) {
       });
 
       map3d.addLayer({
-        id: 'fence3d-line',
-        type: 'line',
+        id: 'fence3d-wall',
+        type: 'fill-extrusion',
         source: 'fence3d',
-        paint: { 'line-color': '#10b981', 'line-width': 3 },
+        paint: {
+          'fill-extrusion-color': '#10b981',
+          'fill-extrusion-height': 2.0,
+          'fill-extrusion-base': 0,
+          'fill-extrusion-opacity': 0.35,
+        },
       });
-    });
   } else {
     map3d.resize();
     map3d.easeTo({ center: centerLngLat, zoom: 18, pitch: 55, bearing: -20, duration: 500 });
@@ -866,77 +870,124 @@ function set3DMode(enabled) {
       }
     }
 
-    function locateUserYard() {
+    let dog3dMarker = null;
+
+function syncDogTo3D() {
+  if (!map3d) return;
+  const lngLat = [state.dogPos.lng, state.dogPos.lat];
+  if (!dog3dMarker) {
+    const el = document.createElement('div');
+    el.style.cssText =
+      'width:18px;height:18px;border-radius:9999px;background:#f59e0b;border:3px solid #fff;box-shadow:0 4px 12px rgba(0,0,0,0.45);';
+    dog3dMarker = new maplibregl.Marker({ element: el }).setLngLat(lngLat).addTo(map3d);
+  } else {
+    dog3dMarker.setLngLat(lngLat);
+  }
+}
+
+function locateUserYard() {
   if (!navigator.geolocation) {
-    showToast('MapleCookie: Geolocation is not supported in this browser');
+    showToast('MapleCookie: Geolocation not supported in this browser');
+    addLog('Geolocation is not supported in this browser.', 'warn');
     return;
   }
 
-  const MAX_ACCURACY_METERS = 50;
+  if (state.locateWatchId !== null) {
+    navigator.geolocation.clearWatch(state.locateWatchId);
+    state.locateWatchId = null;
+  }
+  if (state.locateStatusTimer !== null) {
+    clearInterval(state.locateStatusTimer);
+    state.locateStatusTimer = null;
+  }
+
   let hasCenteredOnce = false;
-  let hasCreatedYard = false;
+  let hasCreatedYard = state.fenceVertices.length >= 3;
   let gotAnyFix = false;
   let elapsedSec = 0;
 
-  // Immediate feedback so you know it started
-  showToast('MapleCookie: Scanning for GPS signal (0s)...');
-
-  // Periodic heartbeat message while waiting for a valid/accurate fix
-  const statusTimer = setInterval(() => {
-    elapsedSec += 3;
-    if (!hasCenteredOnce) {
-      const stateText = gotAnyFix
-        ? 'refining GPS accuracy'
-        : 'searching for GPS lock';
-      showToast(`MapleCookie: Still ${stateText}... (${elapsedSec}s)`);
-    } else {
-      clearInterval(statusTimer);
+  const stopStatusTimer = () => {
+    if (state.locateStatusTimer !== null) {
+      clearInterval(state.locateStatusTimer);
+      state.locateStatusTimer = null;
     }
-  }, 3000);
+  };
 
-  const watchId = navigator.geolocation.watchPosition(
-    (pos) => {
-      gotAnyFix = true;
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy;
+  const applyPosition = (pos, isQuickFix = false) => {
+    gotAnyFix = true;
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const accuracy = pos.coords.accuracy;
 
-      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
-        showToast(
-          `MapleCookie: GPS signal found (~${Math.round(accuracy)}m) — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
-        );
-        return;
+    setDogPosition(lat, lng);
+    syncDogTo3D();
+
+    if (!hasCenteredOnce) {
+      hasCenteredOnce = true;
+      stopStatusTimer();
+
+      if (map) {
+        map.setView([lat, lng], 19, { animate: false });
       }
-
-      clearInterval(statusTimer);
-
-      if (!hasCenteredOnce) {
-        map.setView([lat, lng], 19);
-        hasCenteredOnce = true;
+      if (map3d) {
+        map3d.jumpTo({ center: [lng, lat], zoom: 18, pitch: 60, bearing: -20 });
       }
-
-      if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
+      if (!hasCreatedYard) {
         createDefaultPolygonAroundCenter([lat, lng]);
         hasCreatedYard = true;
       }
-
-      showToast(`MapleCookie: Locked onto location (~${Math.round(accuracy)}m accuracy)`);
-    },
-    (err) => {
-      clearInterval(statusTimer);
-      if (err.code === err.PERMISSION_DENIED) {
-        showToast('MapleCookie: Location permission denied — staying on current map');
-      } else if (err.code === err.TIMEOUT) {
-        showToast('MapleCookie: GPS scan timed out — staying on current map');
-      } else {
-        showToast('MapleCookie: Unable to read GPS right now — staying on current map');
+    } else if (!isQuickFix && typeof accuracy === 'number' && accuracy <= 30) {
+      if (map) {
+        map.panTo([lat, lng]);
       }
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
+      if (map3d && state.is3D) {
+        map3d.easeTo({ center: [lng, lat], duration: 400 });
+      }
     }
+
+    const accLabel = typeof accuracy === 'number' ? ` (~${Math.round(accuracy)}m)` : '';
+    showToast(`MapleCookie: Yard location updated${accLabel}`);
+  };
+
+  const handleError = (err, source) => {
+    addLog(`GPS (${source}): ${err.message || 'Location error'} (code ${err.code})`, 'warn');
+    if (!gotAnyFix) {
+      stopStatusTimer();
+      if (err.code === err.PERMISSION_DENIED) {
+        showToast('MapleCookie: Location permission denied — staying put');
+      } else if (err.code === err.TIMEOUT) {
+        showToast('MapleCookie: GPS scan timed out — staying put');
+      } else {
+        showToast('MapleCookie: Unable to read location — staying put');
+      }
+    }
+  };
+
+  showToast('MapleCookie: Finding your yard (0s)...');
+
+  // Immediate first fix so the view moves right away on load or tap
+  navigator.geolocation.getCurrentPosition(
+    (pos) => applyPosition(pos, true),
+    (err) => handleError(err, 'quick'),
+    { enableHighAccuracy: false, timeout: 5000, maximumAge: 120000 }
+  );
+
+  // Live "not stuck" status updates every 3 seconds
+  state.locateStatusTimer = setInterval(() => {
+    elapsedSec += 3;
+    if (!hasCenteredOnce) {
+      const stage = gotAnyFix ? 'applying GPS fix' : 'waiting for GPS signal';
+      showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
+    } else {
+      stopStatusTimer();
+    }
+  }, 3000);
+
+  // Ongoing high-accuracy watch for finer updates
+  state.locateWatchId = navigator.geolocation.watchPosition(
+    (pos) => applyPosition(pos, false),
+    (err) => handleError(err, 'watch'),
+    { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
   );
 }
 
