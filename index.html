@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>MapleCookie — DIY GPS Dog Fence & Tracker</title>
+  <title>MapleCookie GPS — DIY GPS Dog Fence & Tracker</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -13,9 +13,13 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <!-- Leaflet.js CSS & JS -->
+  <!-- Leaflet.js CSS & JS (2D Satellite / Street) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+  <!-- MapLibre GL JS CSS & JS (Optional 3D Tilted & Extruded Buildings View) -->
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -34,7 +38,6 @@
   </script>
 
   <style>
-    /* Ensure full-screen app layout without accidental page scroll */
     html, body {
       height: 100%;
       margin: 0;
@@ -44,35 +47,15 @@
       -webkit-tap-highlight-color: transparent;
     }
 
-    #map {
+    #map, #map3d {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
-      z-index: 1;
     }
 
-    /* Custom Leaflet marker transitions and styling */
-    .dog-marker-icon {
-      transition: transform 0.2s linear;
-    }
-
-    @keyframes pulseRing {
-      0% {
-        transform: scale(0.85);
-        opacity: 0.85;
-      }
-      70% {
-        transform: scale(1.65);
-        opacity: 0;
-      }
-      100% {
-        transform: scale(1.65);
-        opacity: 0;
-      }
-    }
-
-    .pulse-ring {
-      animation: pulseRing 1.6s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
-    }
+    #map { z-index: 1; }
+    #map3d { z-index: 2; display: none; }
 
     @keyframes alertFlash {
       0%, 100% { opacity: 1; }
@@ -83,7 +66,6 @@
       animation: alertFlash 0.9s ease-in-out infinite;
     }
 
-    /* Custom sleek scrollbar for panels */
     .custom-scroll::-webkit-scrollbar {
       width: 5px;
       height: 5px;
@@ -96,7 +78,6 @@
       border-radius: 9999px;
     }
 
-    /* Hide Leaflet attribution clutter on compact mobile view while keeping compact corner credit */
     .leaflet-control-attribution {
       font-size: 9px !important;
       background: rgba(255, 255, 255, 0.75) !important;
@@ -113,7 +94,6 @@
   <!-- TOP HEADER & LIVE GEOFENCE STATUS BAR -->
   <header class="relative z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-3 sm:px-5 py-2.5 shadow-sm">
     <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
-      <!-- Brand & Collar Telemetry -->
       <div class="flex items-center gap-2.5">
         <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-600/20">
           <i data-lucide="radar" class="w-5 h-5"></i>
@@ -126,7 +106,7 @@
             </span>
           </div>
           <p class="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
-            <span class="inline-flex items-center gap-1"><i data-lucide="battery-charging" class="w-3 h-3 text-emerald-500"></i> 88%</span>
+            <span class="inline-flex items-center gap-1"><i data-lucide="battery-charging" class="w-3 h-3 text-emerald-500"></i> <span id="headerBat">88%</span></span>
             <span>•</span>
             <span class="inline-flex items-center gap-1"><i data-lucide="satellite" class="w-3 h-3 text-sky-500"></i> 11 Sats</span>
             <span class="hidden sm:inline">•</span>
@@ -142,7 +122,7 @@
         <span id="distancePill" class="text-[11px] font-mono opacity-80 hidden md:inline">(+8.4m inside)</span>
       </div>
 
-      <!-- Quick Utility Toggles: Sound, Vibration, Theme -->
+      <!-- Quick Utility Toggles -->
       <div class="flex items-center gap-1.5">
         <button id="btnToggleAudio" onclick="toggleAudio()" title="Toggle Beep Audio" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
           <i id="iconAudio" data-lucide="volume-2" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
@@ -151,12 +131,12 @@
           <i id="iconVibe" data-lucide="smartphone" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
         </button>
         <button id="btnToggleTheme" onclick="toggleTheme()" title="Toggle Light/Dark Mode" class="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition">
-          <i id="iconTheme" data-lucide="moon" class="w-4 h-4"></i>
+          <i id="iconTheme" data-lucide="sun" class="w-4 h-4"></i>
         </button>
       </div>
     </div>
 
-    <!-- Full-Width Pulsing Out-of-Bounds Alert Banner (Hidden when safe) -->
+    <!-- Out-of-Bounds Alert Banner -->
     <div id="alertBanner" class="hidden mt-2 max-w-6xl mx-auto rounded-xl px-3.5 py-2 bg-rose-600 text-white flex items-center justify-between gap-2 shadow-lg alert-flash">
       <div class="flex items-center gap-2">
         <i data-lucide="alert-triangle" class="w-5 h-5 shrink-0"></i>
@@ -171,14 +151,15 @@
     </div>
   </header>
 
-  <!-- MAIN CONTENT WORKSPACE (MAP + RESPONSIVE CONTROL PANEL) -->
+  <!-- MAIN WORKSPACE -->
   <main class="relative flex-1 flex flex-col lg:flex-row overflow-hidden">
 
-    <!-- INTERACTIVE MAP AREA -->
+    <!-- MAP AREA -->
     <div class="relative flex-1 h-full w-full">
       <div id="map"></div>
+      <div id="map3d"></div>
 
-      <!-- Floating Top-Left Map Layer & GPS Locate Controls -->
+      <!-- Floating Top-Left Layer, 3D Toggle & GPS Locate Controls -->
       <div class="absolute top-3 left-3 z-20 flex flex-col gap-2">
         <div class="bg-white/95 dark:bg-slate-900/95 backdrop-blur-md p-1 rounded-2xl shadow-lg border border-slate-200/80 dark:border-slate-800 flex flex-col gap-1">
           <button id="btnLayerSat" onclick="setMapLayer('satellite')" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white shadow-sm transition">
@@ -188,6 +169,10 @@
           <button id="btnLayerStreet" onclick="setMapLayer('street')" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
             <i data-lucide="map" class="w-3.5 h-3.5"></i>
             <span>Street</span>
+          </button>
+          <button id="btnLayer3D" onclick="toggle3DMap()" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+            <i data-lucide="box" class="w-3.5 h-3.5"></i>
+            <span id="btnLayer3DLabel">3D View: Off</span>
           </button>
         </div>
 
@@ -211,7 +196,7 @@
         </button>
       </div>
 
-      <!-- Floating Bottom-Right Quick D-Pad Overlay (Visible on Map Tab) -->
+      <!-- Floating Bottom-Right Quick D-Pad -->
       <div id="floatingDpad" class="absolute bottom-4 right-3 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md p-2 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-800">
         <div class="text-[10px] font-bold text-center text-slate-500 dark:text-slate-400 mb-1 uppercase tracking-wider">Move Dog</div>
         <div class="grid grid-cols-3 gap-1 w-28 h-28">
@@ -238,10 +223,8 @@
       </div>
     </div>
 
-    <!-- RESPONSIVE BOTTOM SHEET (MOBILE) / RIGHT SIDEBAR (DESKTOP) -->
+    <!-- SIDEBAR / BOTTOM SHEET -->
     <aside class="z-20 w-full lg:w-[410px] xl:w-[440px] bg-white dark:bg-slate-900 border-t lg:border-t-0 lg:border-l border-slate-200 dark:border-slate-800 flex flex-col max-h-[46vh] lg:max-h-full shadow-2xl">
-
-      <!-- App Navigation Tab Bar -->
       <nav class="grid grid-cols-3 gap-1 p-2 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 shrink-0">
         <button onclick="switchTab('tracker')" id="tabBtn-tracker" class="tab-btn flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm transition">
           <i data-lucide="navigation" class="w-4 h-4"></i>
@@ -257,9 +240,8 @@
         </button>
       </nav>
 
-      <!-- TAB 1: LIVE TRACKER & SIMULATOR CONTROLS -->
+      <!-- TAB 1: LIVE TRACKER -->
       <div id="tab-tracker" class="tab-panel p-4 overflow-y-auto custom-scroll space-y-4 flex-1">
-        <!-- Dog Telemetry Grid -->
         <div class="grid grid-cols-3 gap-2">
           <div class="p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200/70 dark:border-slate-700/70">
             <div class="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase">Edge Dist.</div>
@@ -275,7 +257,6 @@
           </div>
         </div>
 
-        <!-- Simulation Controls -->
         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3">
           <div class="flex items-center justify-between">
             <div>
@@ -299,19 +280,16 @@
           </div>
         </div>
 
-        <!-- Live Activity Event Log -->
         <div>
           <div class="flex items-center justify-between mb-1.5">
             <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Collar Event Log</h3>
             <button onclick="clearEventLog()" class="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">Clear</button>
           </div>
-          <div id="eventLog" class="space-y-1.5 max-h-32 overflow-y-auto custom-scroll pr-1 text-xs">
-            <!-- Populated dynamically -->
-          </div>
+          <div id="eventLog" class="space-y-1.5 max-h-32 overflow-y-auto custom-scroll pr-1 text-xs"></div>
         </div>
       </div>
 
-      <!-- TAB 2: CUSTOM POLYGONAL GEOFENCE BUILDER -->
+      <!-- TAB 2: FENCE SETUP -->
       <div id="tab-fence" class="tab-panel hidden p-4 overflow-y-auto custom-scroll space-y-4 flex-1">
         <div class="p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 space-y-2">
           <div class="flex items-center justify-between">
@@ -324,11 +302,10 @@
             </span>
           </div>
           <p class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-            Tap <strong>Start Drawing Boundary</strong>, then tap corners around your yard on the satellite map. Drag any white corner handle anytime to fine-tune the fence.
+            Tap <strong>Start Drawing Boundary</strong>, then tap corners around your yard on the map. Drag any white corner handle anytime to fine-tune the fence.
           </p>
         </div>
 
-        <!-- Primary Drawing Controls -->
         <div class="grid grid-cols-2 gap-2">
           <button id="btnStartDraw" onclick="startDrawingBoundary()" class="col-span-2 py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition">
             <i data-lucide="pen-tool" class="w-4 h-4"></i>
@@ -351,17 +328,15 @@
           </button>
         </div>
 
-        <!-- Warning Buffer Slider -->
         <div class="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-1.5">
           <div class="flex justify-between text-xs font-semibold">
             <span>Early Beep Warning Zone</span>
             <span id="warnSliderVal" class="text-amber-600 dark:text-amber-400 font-mono">3.0 meters</span>
           </div>
           <input type="range" id="warnRadiusSlider" min="1" max="8" step="0.5" value="3" oninput="updateWarnDistance(this.value)" class="w-full accent-emerald-600 cursor-pointer" />
-          <p class="text-[11px] text-slate-500 dark:text-slate-400">Triggers warning beep before your dog reaches the outer vibration line.</p>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Triggers warning beep before reaching the outer vibration line.</p>
         </div>
 
-        <!-- Preset Yard Shapes -->
         <div class="flex items-center justify-between pt-1">
           <span class="text-xs text-slate-500 dark:text-slate-400">Need a quick test yard?</span>
           <button onclick="createDefaultPolygonAroundCenter()" class="text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline">
@@ -370,9 +345,8 @@
         </div>
       </div>
 
-      <!-- TAB 3: ESP32 / MQTT / HTTP HARDWARE LINK -->
+      <!-- TAB 3: ESP32 LINK -->
       <div id="tab-esp32" class="tab-panel hidden p-4 overflow-y-auto custom-scroll space-y-4 flex-1">
-        <!-- Live Hardware Webhook / Polling Config -->
         <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
           <div class="flex items-center justify-between">
             <h2 class="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">ESP32 Collar Connection</h2>
@@ -382,7 +356,7 @@
           </div>
 
           <div>
-            <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Collar JSON Endpoint URL (HTTP GET / Webhook)</label>
+            <label class="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">Collar JSON Endpoint URL (HTTP GET)</label>
             <div class="flex gap-1.5">
               <input type="text" id="espEndpointInput" value="http://192.168.1.145/gps" placeholder="http://192.168.1.145/gps" class="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-xs font-mono focus:outline-none focus:border-emerald-500" />
               <button id="btnConnectEsp" onclick="toggleEspPolling()" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shrink-0 transition">
@@ -391,12 +365,11 @@
             </div>
           </div>
 
-          <div class="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
-            <span>Expected JSON: <code class="font-mono text-emerald-600 dark:text-emerald-400">{"lat":43.06,"lng":-88.10,"bat":92}</code></span>
+          <div class="text-[11px] text-slate-500 dark:text-slate-400">
+            Expected JSON: <code class="font-mono text-emerald-600 dark:text-emerald-400">{"lat":43.06,"lng":-88.10,"bat":92}</code>
           </div>
         </div>
 
-        <!-- Synced Polygon JSON Payload for ESP32 -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
             <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Saved Fence Polygon JSON</span>
@@ -408,10 +381,9 @@
           <pre id="polygonJsonBox" class="p-3 rounded-xl bg-slate-950 text-emerald-400 font-mono text-[11px] overflow-x-auto custom-scroll border border-slate-800 max-h-28"></pre>
         </div>
 
-        <!-- Ready-to-Flash Arduino ESP32 + NEO-M8N Sketch -->
         <div class="space-y-1.5">
           <div class="flex items-center justify-between">
-            <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Arduino ESP32-C3 + NEO-M8N Code</span>
+            <span class="text-xs font-bold text-slate-700 dark:text-slate-200">Arduino ESP32-C3 + NEO-M8N Sketch</span>
             <button onclick="copyTextById('arduinoCodeBox', 'Arduino sketch copied!')" class="px-2.5 py-1 rounded-lg bg-emerald-600 text-white hover:bg-emerald-500 text-[11px] font-bold flex items-center gap-1 transition">
               <i data-lucide="copy" class="w-3 h-3"></i>
               <span>Copy Sketch</span>
@@ -420,40 +392,40 @@
           <pre id="arduinoCodeBox" class="p-3 rounded-xl bg-slate-950 text-sky-300 font-mono text-[10px] leading-relaxed overflow-x-auto custom-scroll border border-slate-800 max-h-52"></pre>
         </div>
       </div>
-
     </aside>
   </main>
 
-  <!-- NON-INTRUSIVE TOAST NOTIFICATION -->
+  <!-- TOAST NOTIFICATION -->
   <div id="toastNotification" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none opacity-0 transition-opacity duration-200 bg-slate-900 dark:bg-white text-white dark:text-slate-900 px-4 py-2.5 rounded-full shadow-2xl text-xs font-bold flex items-center gap-2">
     <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400 dark:text-emerald-600"></i>
     <span id="toastMessage">Boundary Saved!</span>
   </div>
 
   <script>
-    // =========================================================================
-    // 1. APP STATE & DEFAULT CONFIGURATION (Brookfield, WI Yard)
-    // =========================================================================
-    const DEFAULT_CENTER = [43.0606, -88.1065]; // Brookfield, Wisconsin
+    const DEFAULT_CENTER = [43.0606, -88.1065];
 
     const state = {
       darkMode: true,
       audioEnabled: true,
       vibeEnabled: true,
       mapLayer: 'satellite',
+      is3D: false,
       isDrawing: false,
       autoWalk: false,
       walkAngle: 0,
       warnThresholdMeters: 3.0,
       fenceVertices: [],
       dogPos: { lat: DEFAULT_CENTER[0], lng: DEFAULT_CENTER[1] },
-      lastZoneStatus: 'SAFE', // 'SAFE' | 'WARNING' | 'OUTSIDE'
+      lastZoneStatus: 'SAFE',
       espPolling: false,
       espTimer: null,
       lastAlertTimestamp: 0,
+      locateWatchId: null,
+      locateStatusTimer: null,
     };
 
     let map, streetLayer, satelliteLayer;
+    let map3d = null;
     let fencePolygon = null;
     let vertexMarkers = [];
     let dogMarker = null;
@@ -462,11 +434,7 @@
     let walkInterval = null;
     let audioCtx = null;
 
-    // =========================================================================
-    // 2. INITIALIZATION
-    // =========================================================================
     window.addEventListener('DOMContentLoaded', () => {
-      // Apply initial dark theme for sleek outdoor/tracker contrast
       document.documentElement.classList.add('dark');
       lucide.createIcons();
 
@@ -475,7 +443,7 @@
       initDogMarker();
       evaluateGeofence();
       updateJsonAndArduinoSnippets();
-      addLog('System initialized. Tap "Simulate Dog Walk" or draw your yard.', 'info');
+      addLog('MapleCookie GPS ready. Draw a fence, test walk, or toggle 3D View.', 'info');
     });
 
     function initMap() {
@@ -487,27 +455,18 @@
 
       L.control.zoom({ position: 'bottomleft' }).addTo(map);
 
-      // Esri World Imagery (High-res Satellite view ideal for drawing yard fences)
       satelliteLayer = L.tileLayer(
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        {
-          maxZoom: 21,
-          attribution: 'Tiles &copy; Esri',
-        }
+        { maxZoom: 21, attribution: 'Tiles &copy; Esri' }
       );
 
-      // Standard OpenStreetMap Street Layer
       streetLayer = L.tileLayer(
         'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-        {
-          maxZoom: 20,
-          attribution: '&copy; OpenStreetMap',
-        }
+        { maxZoom: 20, attribution: '&copy; OpenStreetMap' }
       );
 
       satelliteLayer.addTo(map);
 
-      // Map click handler: either adds fence vertex (if drawing) or moves dog marker (if testing)
       map.on('click', (e) => {
         if (state.isDrawing) {
           addFenceVertex(e.latlng.lat, e.latlng.lng);
@@ -515,9 +474,14 @@
           setDogPosition(e.latlng.lat, e.latlng.lng);
         }
       });
+
+      setTimeout(() => map.invalidateSize(), 150);
     }
 
     function setMapLayer(type) {
+      if (state.is3D) {
+        set3DMode(false);
+      }
       state.mapLayer = type;
       const btnSat = document.getElementById('btnLayerSat');
       const btnStr = document.getElementById('btnLayerStreet');
@@ -535,9 +499,135 @@
       }
     }
 
-    // =========================================================================
-    // 3. POLYGONAL GEOFENCE DRAWING & EDITING
-    // =========================================================================
+    function toggle3DMap() {
+      set3DMode(!state.is3D);
+    }
+
+    function set3DMode(enabled) {
+      state.is3D = enabled;
+      const map3dEl = document.getElementById('map3d');
+      const btn3d = document.getElementById('btnLayer3D');
+      const label3d = document.getElementById('btnLayer3DLabel');
+
+      label3d.textContent = enabled ? '3D View: On' : '3D View: Off';
+      btn3d.className = enabled
+        ? 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-sky-600 text-white shadow-sm transition'
+        : 'flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition';
+
+      if (!enabled) {
+        map3dEl.style.display = 'none';
+        map.invalidateSize();
+        syncLeafletToDog();
+        return;
+      }
+
+      map3dEl.style.display = 'block';
+      const centerLngLat = [state.dogPos.lng, state.dogPos.lat];
+
+      if (!map3d) {
+        map3d = new maplibregl.Map({
+          container: 'map3d',
+          style: 'https://tiles.openfreemap.org/styles/liberty',
+          center: centerLngLat,
+          zoom: 17.5,
+          pitch: 55,
+          bearing: -20,
+          antialias: true,
+        });
+
+        map3d.addControl(
+          new maplibregl.NavigationControl({ visualizePitch: true, showZoom: true, showCompass: true }),
+          'top-right'
+        );
+
+        map3d.on('load', () => {
+          const layers = map3d.getStyle().layers || [];
+          let labelLayerId;
+          for (const layer of layers) {
+            if (layer.type === 'symbol' && layer.layout && layer.layout['text-field']) {
+              labelLayerId = layer.id;
+              break;
+            }
+          }
+
+          if (map3d.getSource('openfreemap')) {
+            map3d.addLayer(
+              {
+                id: 'maplecookie-3d-buildings',
+                source: 'openfreemap',
+                'source-layer': 'building',
+                filter: ['!=', ['get', 'hide_3d'], true],
+                type: 'fill-extrusion',
+                minzoom: 15,
+                paint: {
+                  'fill-extrusion-color': [
+                    'interpolate',
+                    ['linear'],
+                    ['get', 'render_height'],
+                    0, '#cbd5e1',
+                    15, '#94a3b8',
+                    50, '#64748b',
+                  ],
+                  'fill-extrusion-height': [
+                    'interpolate',
+                    ['linear'],
+                    ['zoom'],
+                    15, 0,
+                    16, ['get', 'render_height'],
+                  ],
+                  'fill-extrusion-base': ['get', 'render_min_height'],
+                  'fill-extrusion-opacity': 0.78,
+                },
+              },
+              labelLayerId
+            );
+          }
+
+          map3d.addSource('fence3d', {
+            type: 'geojson',
+            data: buildFenceGeoJson(),
+          });
+
+          map3d.addLayer({
+            id: 'fence3d-fill',
+            type: 'fill',
+            source: 'fence3d',
+            paint: { 'fill-color': '#10b981', 'fill-opacity': 0.18 },
+          });
+
+          map3d.addLayer({
+            id: 'fence3d-line',
+            type: 'line',
+            source: 'fence3d',
+            paint: { 'line-color': '#10b981', 'line-width': 3 },
+          });
+        });
+      } else {
+        map3d.resize();
+        map3d.easeTo({ center: centerLngLat, zoom: 17.5, pitch: 55, bearing: -20, duration: 500 });
+        syncFenceTo3D();
+      }
+    }
+
+    function buildFenceGeoJson() {
+      if (state.fenceVertices.length < 3) {
+        return { type: 'FeatureCollection', features: [] };
+      }
+      const ring = state.fenceVertices.map(([lat, lng]) => [lng, lat]);
+      ring.push([state.fenceVertices[0][1], state.fenceVertices[0][0]]);
+      return {
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] } }],
+      };
+    }
+
+    function syncFenceTo3D() {
+      if (map3d && map3d.getSource('fence3d')) {
+        map3d.getSource('fence3d').setData(buildFenceGeoJson());
+      }
+    }
+
+    // FENCE DRAWING & EDITING
     function loadSavedBoundaryOrDefault() {
       try {
         const saved = localStorage.getItem('MapleCookie_fence_v1');
@@ -560,7 +650,6 @@
 
     function createDefaultPolygonAroundCenter(centerLatLng = null) {
       const c = centerLatLng || [map.getCenter().lat, map.getCenter().lng];
-      // ~26m x 22m yard polygon around center
       const dLat = 0.00011;
       const dLng = 0.00015;
       state.fenceVertices = [
@@ -582,7 +671,6 @@
       const btn = document.getElementById('btnStartDraw');
 
       if (state.isDrawing) {
-        // Clear current vertices so user can tap fresh points cleanly
         state.fenceVertices = [];
         renderFencePolygon();
         toast.classList.remove('hidden');
@@ -646,17 +734,15 @@
       }
       try {
         localStorage.setItem('MapleCookie_fence_v1', JSON.stringify(state.fenceVertices));
-      } catch (e) {
-        console.warn(e);
+      } catch (err) {
+        console.warn('Could not save boundary:', err);
       }
       updateJsonAndArduinoSnippets();
-      evaluateGeofence();
-      showToast('Boundary saved & synced to ESP32 JSON!');
-      addLog(`Saved ${state.fenceVertices.length}-point polygonal fence.`, 'safe');
+      showToast('Boundary saved & synced to JSON!');
+      addLog(`Saved fence with ${state.fenceVertices.length} corners.`, 'info');
     }
 
     function renderFencePolygon() {
-      // Clear existing polygon & vertex handles
       if (fencePolygon) {
         map.removeLayer(fencePolygon);
         fencePolygon = null;
@@ -666,122 +752,90 @@
 
       document.getElementById('fenceAreaBadge').textContent = `${state.fenceVertices.length} Vertices`;
 
-      if (state.fenceVertices.length === 0) return;
-
-      // Draw shaded polygon (or polyline while < 3 points)
       if (state.fenceVertices.length >= 3) {
         fencePolygon = L.polygon(state.fenceVertices, {
           color: '#10b981',
           weight: 3,
           fillColor: '#10b981',
-          fillOpacity: 0.22,
-          dashArray: state.isDrawing ? '6, 6' : null,
+          fillOpacity: 0.16,
         }).addTo(map);
-      } else {
+      } else if (state.fenceVertices.length >= 2) {
         fencePolygon = L.polyline(state.fenceVertices, {
           color: '#10b981',
           weight: 3,
-          dashArray: '6, 6',
+          dashArray: '5, 6',
         }).addTo(map);
       }
 
-      // Draw draggable corner handles
-      state.fenceVertices.forEach((coord, idx) => {
-        const handleIcon = L.divIcon({
-          className: 'custom-vertex-handle',
-          html: `<div class="w-4 h-4 rounded-full bg-white border-[3px] border-emerald-600 shadow-md cursor-move flex items-center justify-center text-[8px] font-bold text-slate-900">${idx + 1}</div>`,
-          iconSize: [16, 16],
-          iconAnchor: [8, 8],
-        });
-
-        const marker = L.marker(coord, {
-          icon: handleIcon,
-          draggable: true,
+      state.fenceVertices.forEach((pt, idx) => {
+        const handle = L.circleMarker(pt, {
+          radius: 7,
+          fillColor: '#ffffff',
+          color: '#059669',
+          weight: 3,
+          opacity: 1,
+          fillOpacity: 1,
         }).addTo(map);
 
-        marker.on('drag', (e) => {
-          const pos = e.target.getLatLng();
-          state.fenceVertices[idx] = [Number(pos.lat.toFixed(6)), Number(pos.lng.toFixed(6))];
-          if (fencePolygon) {
-            fencePolygon.setLatLngs(state.fenceVertices);
-          }
+        handle.on('click', (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          const nextIdx = (idx + 1) % state.fenceVertices.length;
+          const nudgedLat = Number((pt[0] + 0.00001).toFixed(6));
+          const nudgedLng = Number((pt[1] + 0.00001).toFixed(6));
+          state.fenceVertices[idx] = [nudgedLat, nudgedLng];
+          renderFencePolygon();
           evaluateGeofence();
-        });
-
-        marker.on('dragend', () => {
           updateJsonAndArduinoSnippets();
+          showToast(`Corner ${idx + 1} nudged (next: ${nextIdx + 1})`);
         });
 
-        vertexMarkers.push(marker);
+        vertexMarkers.push(handle);
       });
+
+      syncFenceTo3D();
     }
 
-    // =========================================================================
-    // 4. DOG MARKER, MOVEMENT & SIMULATION
-    // =========================================================================
+    // DOG MARKER, MOVEMENT & LIVE "NOT STUCK" GEOLOCATION
     function initDogMarker() {
-      const icon = buildDogDivIcon('SAFE');
-      dogMarker = L.marker([state.dogPos.lat, state.dogPos.lng], {
-        icon,
-        draggable: true,
-        zIndexOffset: 1000,
-      }).addTo(map);
-
-      dogMarker.on('drag', (e) => {
-        const pos = e.target.getLatLng();
-        state.dogPos = { lat: pos.lat, lng: pos.lng };
-        updateCoordDisplays();
-        evaluateGeofence();
-      });
-
-      dogTrailPolyline = L.polyline([], {
-        color: '#38bdf8',
-        weight: 2.5,
-        opacity: 0.7,
-        dashArray: '4, 6',
-      }).addTo(map);
-
-      updateCoordDisplays();
-    }
-
-    function buildDogDivIcon(zoneStatus) {
-      let ringColor = 'bg-emerald-500';
-      let badgeBg = 'bg-emerald-600';
-      if (zoneStatus === 'WARNING') {
-        ringColor = 'bg-amber-400';
-        badgeBg = 'bg-amber-500';
-      } else if (zoneStatus === 'OUTSIDE') {
-        ringColor = 'bg-rose-500';
-        badgeBg = 'bg-rose-600';
-      }
-
-      return L.divIcon({
-        className: 'dog-marker-icon',
+      const icon = L.divIcon({
+        className: '',
         html: `
-          <div class="relative w-11 h-11 flex items-center justify-center">
-            <span class="absolute inset-0 rounded-full ${ringColor} pulse-ring"></span>
-            <div class="relative w-9 h-9 rounded-full ${badgeBg} border-2 border-white shadow-xl flex items-center justify-center text-white text-base">
-              🐕
-            </div>
+          <div class="relative flex items-center justify-center w-9 h-9">
+            <span class="pulse-ring absolute w-8 h-8 rounded-full bg-emerald-400/50"></span>
+            <span class="relative w-5 h-5 rounded-full bg-amber-400 border-2 border-white shadow-lg flex items-center justify-center text-[10px] font-black text-slate-950">M</span>
           </div>
         `,
-        iconSize: [44, 44],
-        iconAnchor: [22, 22],
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
+
+      dogMarker = L.marker([state.dogPos.lat, state.dogPos.lng], { icon }).addTo(map);
+      dogTrailCoords = [[state.dogPos.lat, state.dogPos.lng]];
+      dogTrailPolyline = L.polyline(dogTrailCoords, {
+        color: '#f59e0b',
+        weight: 2.5,
+        opacity: 0.7,
+        dashArray: '4, 5',
+      }).addTo(map);
     }
 
     function setDogPosition(lat, lng) {
-      state.dogPos = { lat, lng };
+      state.dogPos = { lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) };
       if (dogMarker) {
-        dogMarker.setLatLng([lat, lng]);
+        dogMarker.setLatLng([state.dogPos.lat, state.dogPos.lng]);
+      }
+      dogTrailCoords.push([state.dogPos.lat, state.dogPos.lng]);
+      if (dogTrailCoords.length > 60) dogTrailCoords.shift();
+      if (dogTrailPolyline) {
+        dogTrailPolyline.setLatLngs(dogTrailCoords);
+      }
+      document.getElementById('headerCoords').textContent =
+        `${state.dogPos.lat.toFixed(4)}, ${state.dogPos.lng.toFixed(4)}`;
+
+      if (map3d && state.is3D) {
+        map3d.easeTo({ center: [state.dogPos.lng, state.dogPos.lat], duration: 250 });
       }
 
-      // Append breadcrumb trail
-      dogTrailCoords.push([lat, lng]);
-      if (dogTrailCoords.length > 40) dogTrailCoords.shift();
-      if (dogTrailPolyline) dogTrailPolyline.setLatLngs(dogTrailCoords);
-
-      updateCoordDisplays();
       evaluateGeofence();
     }
 
@@ -789,439 +843,267 @@
       setDogPosition(state.dogPos.lat + dLat, state.dogPos.lng + dLng);
     }
 
-    function toggleAutoWalk() {
-      state.autoWalk = !state.autoWalk;
-      const btn = document.getElementById('btnSimWalk');
-      const txt = document.getElementById('simWalkText');
-      const icon = document.getElementById('simWalkIcon');
-      const dpadIcon = document.getElementById('dpadPlayIcon');
-
-      if (state.autoWalk) {
-        btn.classList.replace('bg-emerald-600', 'bg-amber-500');
-        btn.classList.replace('hover:bg-emerald-500', 'hover:bg-amber-400');
-        txt.textContent = 'Stop Dog Walk';
-        icon.setAttribute('data-lucide', 'square');
-        dpadIcon.setAttribute('data-lucide', 'square');
-        lucide.createIcons();
-        addLog('Started simulated dog walk around yard perimeter.', 'info');
-
-        const center = state.fenceVertices.length >= 3
-          ? getPolygonCentroid(state.fenceVertices)
-          : [state.dogPos.lat, state.dogPos.lng];
-
-        walkInterval = setInterval(() => {
-          state.walkAngle += 0.14;
-          // Elliptical path that intentionally wanders near and slightly outside the fence edge to demonstrate alerts
-          const radiusLat = 0.000135 + Math.sin(state.walkAngle * 2) * 0.000025;
-          const radiusLng = 0.000175 + Math.cos(state.walkAngle * 2) * 0.00003;
-          const nextLat = center[0] + Math.sin(state.walkAngle) * radiusLat;
-          const nextLng = center[1] + Math.cos(state.walkAngle) * radiusLng;
-          setDogPosition(nextLat, nextLng);
-        }, 450);
-      } else {
-        clearInterval(walkInterval);
-        btn.classList.replace('bg-amber-500', 'bg-emerald-600');
-        btn.classList.replace('hover:bg-amber-400', 'hover:bg-emerald-500');
-        txt.textContent = 'Simulate Dog Walk';
-        icon.setAttribute('data-lucide', 'play');
-        dpadIcon.setAttribute('data-lucide', 'play');
-        lucide.createIcons();
-        addLog('Stopped simulated dog walk.', 'info');
-      }
-    }
-
-    function recallDogToCenter() {
-      if (state.autoWalk) toggleAutoWalk();
-      const center = state.fenceVertices.length >= 3
-        ? getPolygonCentroid(state.fenceVertices)
-        : [map.getCenter().lat, map.getCenter().lng];
-      dogTrailCoords = [];
-      setDogPosition(center[0], center[1]);
-      map.panTo(center);
-      addLog('Dog recalled to center of safe yard.', 'safe');
-    }
-
     function centerOnDog() {
+      syncLeafletToDog();
+      if (map3d && state.is3D) {
+        map3d.easeTo({ center: [state.dogPos.lng, state.dogPos.lat], zoom: 17.5, pitch: 55, bearing: -20, duration: 600 });
+      }
+      showToast('Centered on dog marker');
+    }
+
+    function syncLeafletToDog() {
       map.setView([state.dogPos.lat, state.dogPos.lng], 19);
     }
 
-    function locateUserYard() {
-  if (!navigator.geolocation) {
-    showToast('MapleCookie: Geolocation not supported in this browser');
-    return;
-  }
-
-  const MAX_ACCURACY_METERS = 50; // Ignore coarse IP/cell fixes worse than 50m
-  let hasCenteredOnce = false;
-  let hasCreatedYard = false;
-  let gotAnyFix = false;
-  let elapsedSec = 0;
-
-  showToast('MapleCookie: Scanning for GPS signal (0s)...');
-
-  const statusTimer = setInterval(() => {
-    elapsedSec += 3;
-    if (!hasCenteredOnce) {
-      const stage = gotAnyFix ? 'refining GPS accuracy' : 'waiting for GPS fix';
-      showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
-    } else {
-      clearInterval(statusTimer);
-    }
-  }, 3000);
-
-  navigator.geolocation.watchPosition(
-    (pos) => {
-      gotAnyFix = true;
-      const lat = pos.coords.latitude;
-      const lng = pos.coords.longitude;
-      const accuracy = pos.coords.accuracy; // in meters
-
-      // Only show/use position once accuracy is reasonable
-      if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
-        showToast(
-          `MapleCookie: GPS accuracy ~${Math.round(accuracy)}m — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
-        );
-        return;
-      }
-
-      clearInterval(statusTimer);
-
-      if (!hasCenteredOnce) {
-        // ...keep your existing centering & yard creation code right here...
-      // Only create the default yard once on initial lock so reloads don't wipe custom corners
-      if (!hasCreatedYard && typeof createDefaultPolygonAroundCenter === 'function') {
-        createDefaultPolygonAroundCenter([lat, lng]);
-        hasCreatedYard = true;
-      }
-
-      showToast(`Locked within ~${Math.round(accuracy)}m`);
-    }
-    (err) => {
-      // Do NOT move the map or overwrite anything if permission is denied or times out
-      showToast('Could not get accurate GPS — staying put');
-    },
-    {
-      enableHighAccuracy: true,
-      timeout: 15000,
-      maximumAge: 0
-    }
-  );
-}
-
-    // =========================================================================
-    // 5. POINT-IN-POLYGON & EDGE DISTANCE GEOFENCE ENGINE
-    // =========================================================================
-    function evaluateGeofence() {
-      if (state.fenceVertices.length < 3) {
-        updateZoneUI('SAFE', 0);
-        return;
-      }
-
-      const pt = [state.dogPos.lat, state.dogPos.lng];
-      const inside = isPointInPolygon(pt, state.fenceVertices);
-      const distMeters = distanceToPolygonEdgeMeters(pt, state.fenceVertices);
-
-      let status = 'SAFE';
-      if (!inside) {
-        status = 'OUTSIDE';
-      } else if (distMeters <= state.warnThresholdMeters) {
-        status = 'WARNING';
-      }
-
-      updateZoneUI(status, distMeters);
+    function recallDogToCenter() {
+      const center = state.fenceVertices.length >= 3
+        ? getPolygonCentroid(state.fenceVertices)
+        : DEFAULT_CENTER;
+      setDogPosition(center[0], center[1]);
+      syncLeafletToDog();
+      addLog('Dog recalled to yard center.', 'info');
     }
 
-    function updateZoneUI(status, distMeters) {
-      const badge = document.getElementById('statusBadge');
-      const dot = document.getElementById('statusDot');
-      const text = document.getElementById('statusText');
-      const distPill = document.getElementById('distancePill');
-      const alertBanner = document.getElementById('alertBanner');
-      const statEdgeDist = document.getElementById('statEdgeDist');
-      const statCollarAction = document.getElementById('statCollarAction');
-
-      const formattedDist = `${distMeters.toFixed(1)}m`;
-
-      if (status === 'SAFE') {
-        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 transition-all duration-200';
-        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
-        text.textContent = 'SAFE IN YARD';
-        distPill.textContent = `(${formattedDist} inside)`;
-        alertBanner.classList.add('hidden');
-
-        statEdgeDist.textContent = `${formattedDist} in`;
-        statEdgeDist.className = 'text-sm font-extrabold mt-0.5 text-emerald-600 dark:text-emerald-400';
-        statCollarAction.textContent = 'Standby';
-        statCollarAction.className = 'text-sm font-extrabold mt-0.5 text-slate-700 dark:text-slate-200';
-
-        if (fencePolygon) fencePolygon.setStyle({ color: '#10b981', fillColor: '#10b981' });
-      } else if (status === 'WARNING') {
-        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-800 dark:text-amber-300 transition-all duration-200';
-        dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping';
-        text.textContent = 'WARNING ZONE — BEEP';
-        distPill.textContent = `(${formattedDist} to edge)`;
-        alertBanner.classList.add('hidden');
-
-        statEdgeDist.textContent = `${formattedDist} edge`;
-        statEdgeDist.className = 'text-sm font-extrabold mt-0.5 text-amber-500';
-        statCollarAction.textContent = 'Piezo Beep';
-        statCollarAction.className = 'text-sm font-extrabold mt-0.5 text-amber-500';
-
-        if (fencePolygon) fencePolygon.setStyle({ color: '#f59e0b', fillColor: '#f59e0b' });
-        triggerCollarFeedback('WARNING');
+    function toggleAutoWalk() {
+      state.autoWalk = !state.autoWalk;
+      const btnText = document.getElementById('simWalkText');
+      if (state.autoWalk) {
+        btnText.textContent = 'Stop Walk';
+        walkInterval = setInterval(() => {
+          state.walkAngle += 0.25;
+          const base = state.fenceVertices.length >= 3
+            ? getPolygonCentroid(state.fenceVertices)
+            : DEFAULT_CENTER;
+          const radius = 0.00014;
+          const nextLat = base[0] + Math.sin(state.walkAngle) * radius;
+          const nextLng = base[1] + Math.cos(state.walkAngle) * radius * 1.3;
+          setDogPosition(nextLat, nextLng);
+        }, 450);
       } else {
-        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-600 text-white border border-rose-400 shadow-md transition-all duration-200';
-        dot.className = 'w-2.5 h-2.5 rounded-full bg-white animate-ping';
-        text.textContent = 'OUT OF BOUNDS';
-        distPill.textContent = `(${formattedDist} past)`;
-        alertBanner.classList.remove('hidden');
-
-        statEdgeDist.textContent = `+${formattedDist} out`;
-        statEdgeDist.className = 'text-sm font-extrabold mt-0.5 text-rose-500';
-        statCollarAction.textContent = 'Vibrate + Beep';
-        statCollarAction.className = 'text-sm font-extrabold mt-0.5 text-rose-500';
-
-        if (fencePolygon) fencePolygon.setStyle({ color: '#e11d48', fillColor: '#e11d48' });
-        triggerCollarFeedback('OUTSIDE');
-      }
-
-      if (state.lastZoneStatus !== status) {
-        if (dogMarker) dogMarker.setIcon(buildDogDivIcon(status));
-        if (status === 'WARNING') {
-          addLog(`Entered ${state.warnThresholdMeters}m warning buffer — Beep triggered.`, 'warn');
-        } else if (status === 'OUTSIDE') {
-          addLog(`ALERT: Crossed boundary (${formattedDist} outside) — Vibrate + Beep!`, 'danger');
-        } else if (state.lastZoneStatus !== 'SAFE') {
-          addLog('Returned safely inside yard boundary.', 'safe');
-        }
-        state.lastZoneStatus = status;
+        btnText.textContent = 'Simulate Dog Walk';
+        clearInterval(walkInterval);
+        walkInterval = null;
       }
     }
 
-    // Ray-casting point-in-polygon algorithm
-    function isPointInPolygon(point, vs) {
-      const x = point[0], y = point[1];
+    function locateUserYard() {
+      if (!navigator.geolocation) {
+        showToast('MapleCookie: Geolocation not supported in this browser');
+        return;
+      }
+
+      if (state.locateWatchId !== null) {
+        navigator.geolocation.clearWatch(state.locateWatchId);
+      }
+      if (state.locateStatusTimer !== null) {
+        clearInterval(state.locateStatusTimer);
+      }
+
+      const MAX_ACCURACY_METERS = 50;
+      let hasCenteredOnce = false;
+      let hasCreatedYard = false;
+      let gotAnyFix = false;
+      let elapsedSec = 0;
+
+      showToast('MapleCookie: Scanning for GPS signal (0s)...');
+
+      state.locateStatusTimer = setInterval(() => {
+        elapsedSec += 3;
+        if (!hasCenteredOnce) {
+          const stage = gotAnyFix ? 'refining GPS accuracy' : 'searching for GPS lock';
+          showToast(`MapleCookie: Still ${stage}... (${elapsedSec}s)`);
+        } else {
+          clearInterval(state.locateStatusTimer);
+        }
+      }, 3000);
+
+      state.locateWatchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          gotAnyFix = true;
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+          const accuracy = pos.coords.accuracy;
+
+          if (typeof accuracy === 'number' && accuracy > MAX_ACCURACY_METERS) {
+            showToast(
+              `MapleCookie: GPS accuracy ~${Math.round(accuracy)}m — waiting for <= ${MAX_ACCURACY_METERS}m... (${elapsedSec}s)`
+            );
+            return;
+          }
+
+          clearInterval(state.locateStatusTimer);
+
+          if (!hasCenteredOnce) {
+            map.setView([lat, lng], 19);
+            setDogPosition(lat, lng);
+            if (!hasCreatedYard) {
+              createDefaultPolygonAroundCenter([lat, lng]);
+              hasCreatedYard = true;
+            }
+            hasCenteredOnce = true;
+          }
+
+          showToast(`MapleCookie: Locked onto location (~${Math.round(accuracy)}m)`);
+        },
+        (err) => {
+          clearInterval(state.locateStatusTimer);
+          if (err.code === err.PERMISSION_DENIED) {
+            showToast('MapleCookie: Location permission denied — staying put');
+          } else if (err.code === err.TIMEOUT) {
+            showToast('MapleCookie: GPS scan timed out — staying put');
+          } else {
+            showToast('MapleCookie: Unable to read GPS right now — staying put');
+          }
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    }
+
+    // GEOFENCE MATH & ALERTS
+    function isPointInPolygon(lat, lng, poly) {
       let inside = false;
-      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-        const xi = vs[i][0], yi = vs[i][1];
-        const xj = vs[j][0], yj = vs[j][1];
-        const intersect = ((yi > y) !== (yj > y)) &&
-          (x < ((xj - xi) * (y - yi)) / (yj - yi + 1e-12) + xi);
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const xi = poly[i][0], yi = poly[i][1];
+        const xj = poly[j][0], yj = poly[j][1];
+        const intersect =
+          ((yi > lng) !== (yj > lng)) &&
+          (lat < ((xj - xi) * (lng - yi)) / ((yj - yi) || 1e-12) + xi);
         if (intersect) inside = !inside;
       }
       return inside;
     }
 
-    // Minimum distance in meters from point to any segment of the polygon boundary
-    function distanceToPolygonEdgeMeters(pt, vs) {
+    function distanceToPolygonEdgeMeters(lat, lng, poly) {
       let minMeters = Infinity;
-      const latScale = 111320;
-      const lngScale = 111320 * Math.cos((pt[0] * Math.PI) / 180);
-
-      const px = pt[1] * lngScale;
-      const py = pt[0] * latScale;
-
-      for (let i = 0; i < vs.length; i++) {
-        const a = vs[i];
-        const b = vs[(i + 1) % vs.length];
-
-        const ax = a[1] * lngScale;
-        const ay = a[0] * latScale;
-        const bx = b[1] * lngScale;
-        const by = b[0] * latScale;
-
-        const abx = bx - ax;
-        const aby = by - ay;
-        const lenSq = abx * abx + aby * aby;
-        let t = lenSq === 0 ? 0 : ((px - ax) * abx + (py - ay) * aby) / lenSq;
-        t = Math.max(0, Math.min(1, t));
-
-        const projX = ax + t * abx;
-        const projY = ay + t * aby;
-        const dist = Math.hypot(px - projX, py - projY);
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const dist = pointToSegmentMeters(lat, lng, poly[j][0], poly[j][1], poly[i][0], poly[i][1]);
         if (dist < minMeters) minMeters = dist;
       }
       return minMeters;
     }
 
-    function getPolygonCentroid(vs) {
-      let latSum = 0, lngSum = 0;
-      vs.forEach((p) => {
-        latSum += p[0];
-        lngSum += p[1];
-      });
-      return [latSum / vs.length, lngSum / vs.length];
+    function pointToSegmentMeters(px, py, ax, ay, bx, by) {
+      const dx = bx - ax;
+      const dy = by - ay;
+      const lenSq = dx * dx + dy * dy;
+      let t = lenSq === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const projX = ax + t * dx;
+      const projY = ay + t * dy;
+      return haversineMeters(px, py, projX, projY);
     }
 
-    // =========================================================================
-    // 6. WEB AUDIO API BEEP & BROWSER HAPTIC VIBRATION
-    // =========================================================================
-    function triggerCollarFeedback(level) {
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (d) => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function getPolygonCentroid(poly) {
+      let sumLat = 0, sumLng = 0;
+      poly.forEach(([lat, lng]) => {
+        sumLat += lat;
+        sumLng += lng;
+      });
+      return [sumLat / poly.length, sumLng / poly.length];
+    }
+
+    function evaluateGeofence() {
+      if (state.fenceVertices.length < 3) {
+        updateZoneUI('SAFE', 0);
+        return;
+      }
+      const inside = isPointInPolygon(state.dogPos.lat, state.dogPos.lng, state.fenceVertices);
+      const edgeDist = distanceToPolygonEdgeMeters(state.dogPos.lat, state.dogPos.lng, state.fenceVertices);
+
+      if (!inside) {
+        updateZoneUI('OUTSIDE', edgeDist);
+      } else if (edgeDist <= state.warnThresholdMeters) {
+        updateZoneUI('WARNING', edgeDist);
+      } else {
+        updateZoneUI('SAFE', edgeDist);
+      }
+    }
+
+    function updateZoneUI(zone, edgeDist) {
+      const badge = document.getElementById('statusBadge');
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      const distPill = document.getElementById('distancePill');
+      const alertBanner = document.getElementById('alertBanner');
+      const statEdge = document.getElementById('statEdgeDist');
+      const statAction = document.getElementById('statCollarAction');
+
+      statEdge.textContent = `${edgeDist.toFixed(1)} m`;
+
+      if (zone === 'OUTSIDE') {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-700 dark:text-rose-300 transition-all duration-200';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping';
+        text.textContent = 'OUT OF BOUNDS';
+        distPill.textContent = `(${edgeDist.toFixed(1)}m outside)`;
+        statAction.textContent = 'Vibrate + Beep';
+        alertBanner.classList.remove('hidden');
+        triggerAlertFeedback('OUTSIDE');
+      } else if (zone === 'WARNING') {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-700 dark:text-amber-300 transition-all duration-200';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-amber-500';
+        text.textContent = 'NEAR BOUNDARY';
+        distPill.textContent = `(${edgeDist.toFixed(1)}m to edge)`;
+        statAction.textContent = 'Warning Beep';
+        alertBanner.classList.add('hidden');
+        triggerAlertFeedback('WARNING');
+      } else {
+        badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 transition-all duration-200';
+        dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        text.textContent = 'SAFE IN YARD';
+        distPill.textContent = `(+${edgeDist.toFixed(1)}m inside)`;
+        statAction.textContent = 'Standby';
+        alertBanner.classList.add('hidden');
+      }
+
+      if (zone !== state.lastZoneStatus) {
+        state.lastZoneStatus = zone;
+        addLog(`Zone changed to ${zone} (${edgeDist.toFixed(1)}m from fence).`, zone === 'OUTSIDE' ? 'alert' : 'info');
+      }
+    }
+
+    function triggerAlertFeedback(level) {
       const now = Date.now();
-      const cooldown = level === 'OUTSIDE' ? 950 : 1600;
-      if (now - state.lastAlertTimestamp < cooldown) return;
+      if (now - state.lastAlertTimestamp < 1800) return;
       state.lastAlertTimestamp = now;
 
-      // Browser Vibration API
       if (state.vibeEnabled && navigator.vibrate) {
-        if (level === 'OUTSIDE') {
-          navigator.vibrate([220, 100, 220]);
-        } else {
-          navigator.vibrate(110);
-        }
+        navigator.vibrate(level === 'OUTSIDE' ? [220, 100, 220] : [120]);
       }
-
-      // Web Audio API Piezo Buzzer Synthesis
       if (state.audioEnabled) {
-        try {
-          if (!audioCtx) {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-          }
-          if (audioCtx.state === 'suspended') audioCtx.resume();
-
-          const osc = audioCtx.createOscillator();
-          const gain = audioCtx.createGain();
-          osc.type = level === 'OUTSIDE' ? 'square' : 'sine';
-          osc.frequency.setValueAtTime(level === 'OUTSIDE' ? 2400 : 1850, audioCtx.currentTime);
-
-          gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + (level === 'OUTSIDE' ? 0.28 : 0.14));
-
-          osc.connect(gain);
-          gain.connect(audioCtx.destination);
-          osc.start();
-          osc.stop(audioCtx.currentTime + (level === 'OUTSIDE' ? 0.3 : 0.15));
-        } catch (e) {
-          // Ignore audio autoplay restriction until user interacts
-        }
+        playTone(level === 'OUTSIDE' ? 880 : 587, level === 'OUTSIDE' ? 0.22 : 0.12);
       }
     }
 
-    // =========================================================================
-    // 7. ESP32 HTTP POLLING & CODE GENERATOR
-    // =========================================================================
-    function toggleEspPolling() {
-      const btn = document.getElementById('btnConnectEsp');
-      const statusBadge = document.getElementById('espPollStatus');
-      const connModeBadge = document.getElementById('connModeBadge');
-      const url = document.getElementById('espEndpointInput').value.trim();
-
-      if (!state.espPolling) {
-        if (!url) {
-          showToast('Enter your ESP32 IP or webhook URL');
-          return;
+    function playTone(freq, durationSec) {
+      try {
+        if (!audioCtx) {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AudioContextClass();
         }
-        if (state.autoWalk) toggleAutoWalk();
-        state.espPolling = true;
-        btn.textContent = 'Disconnect';
-        btn.classList.replace('bg-emerald-600', 'bg-rose-600');
-        statusBadge.textContent = 'POLLING 2s';
-        statusBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-500';
-        connModeBadge.textContent = 'ESP32 LIVE';
-        addLog(`Connected to ESP32 endpoint: ${url}`, 'info');
-
-        state.espTimer = setInterval(async () => {
-          try {
-            const res = await fetch(url, { cache: 'no-store' });
-            const data = await res.json();
-            if (typeof data.lat === 'number' && typeof data.lng === 'number') {
-              setDogPosition(data.lat, data.lng);
-            }
-          } catch (err) {
-            statusBadge.textContent = 'RETRYING...';
-            statusBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400';
-          }
-        }, 2000);
-      } else {
-        state.espPolling = false;
-        clearInterval(state.espTimer);
-        btn.textContent = 'Connect';
-        btn.classList.replace('bg-rose-600', 'bg-emerald-600');
-        statusBadge.textContent = 'IDLE';
-        statusBadge.className = 'text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
-        connModeBadge.textContent = 'SIMULATOR';
-        addLog('Disconnected from ESP32 endpoint.', 'info');
-      }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.value = 0.08;
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + durationSec);
+      } catch (_) {}
     }
 
-    function updateJsonAndArduinoSnippets() {
-      const payload = {
-        warn_meters: state.warnThresholdMeters,
-        vertices: state.fenceVertices.map(([lat, lng]) => ({ lat, lng })),
-      };
-      document.getElementById('polygonJsonBox').textContent = JSON.stringify(payload, null, 2);
-
-      // Build C++ float arrays for Arduino sketch directly from user's drawn polygon
-      const pts = state.fenceVertices.length >= 3
-        ? state.fenceVertices
-        : [[43.06071, -88.10665], [43.06071, -88.10635], [43.06049, -88.10635], [43.06049, -88.10665]];
-
-      const latsStr = pts.map((p) => p[0].toFixed(6)).join(', ');
-      const lngsStr = pts.map((p) => p[1].toFixed(6)).join(', ');
-
-      const sketch = `// MapleCookie DIY GPS Dog Collar (ESP32-C3 + u-blox NEO-M8N)
-#include <WiFi.h>
-#include <WebServer.h>
-#include <TinyGPSPlus.h>
-
-const char* WIFI_SSID = "YOUR_WIFI_NAME";
-const char* WIFI_PASS = "YOUR_WIFI_PASSWORD";
-
-#define BUZZER_PIN 2   // Piezo buzzer / coin vibration motor
-#define GPS_RX_PIN 20  // Connect to NEO-M8N TX
-#define GPS_TX_PIN 21  // Connect to NEO-M8N RX
-
-TinyGPSPlus gps;
-HardwareSerial gpsSerial(1);
-WebServer server(80);
-
-// Auto-generated from your MapleCookie map boundary:
-const int NUM_VERTICES = ${pts.length};
-double polyLat[NUM_VERTICES] = {${latsStr}};
-double polyLng[NUM_VERTICES] = {${lngsStr}};
-
-bool isInsideYard(double lat, double lng) {
-  bool inside = false;
-  for (int i = 0, j = NUM_VERTICES - 1; i < NUM_VERTICES; j = i++) {
-    if (((polyLng[i] > lng) != (polyLng[j] > lng)) &&
-        (lat < (polyLat[j] - polyLat[i]) * (lng - polyLng[i]) / (polyLng[j] - polyLng[i]) + polyLat[i])) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-void handleGpsJson() {
-  server.sendHeader("Access-Control-Allow-Origin", "*");
-  String json = "{\\"lat\\":" + String(gps.location.lat(), 6) +
-                ",\\"lng\\":" + String(gps.location.lng(), 6) +
-                ",\\"sats\\":" + String(gps.satellites.value()) + "}";
-  server.send(200, "application/json", json);
-}
-
-void setup() {
-  pinMode(BUZZER_PIN, OUTPUT);
-  gpsSerial.begin(9600, SERIAL_8N1, GPS_RX_PIN, GPS_TX_PIN);
-  WiFi.begin(WIFI_SSID, WIFI_PASS);
-  server.on("/gps", handleGpsJson);
-  server.begin();
-}
-
-void loop() {
-  while (gpsSerial.available()) gps.encode(gpsSerial.read());
-  server.handleClient();
-
-  if (gps.location.isValid()) {
-    bool safe = isInsideYard(gps.location.lat(), gps.location.lng());
-    digitalWrite(BUZZER_PIN, safe ? LOW : HIGH); // Alert if out of bounds!
-  }
-}`;
-      document.getElementById('arduinoCodeBox').textContent = sketch;
-    }
-
-    // =========================================================================
-    // 8. UI HELPERS, TABS, LOGGING & CLIPBOARD
-    // =========================================================================
+    // UI CONTROLS, LOG & ESP32 SNIPPETS
     function switchTab(tabName) {
       document.querySelectorAll('.tab-panel').forEach((el) => el.classList.add('hidden'));
       document.getElementById(`tab-${tabName}`).classList.remove('hidden');
@@ -1229,82 +1111,50 @@ void loop() {
       document.querySelectorAll('.tab-btn').forEach((btn) => {
         btn.className = 'tab-btn flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition';
       });
-      document.getElementById(`tabBtn-${tabName}`).className =
-        'tab-btn flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm transition';
+      const activeBtn = document.getElementById(`tabBtn-${tabName}`);
+      activeBtn.className = 'tab-btn flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-sm transition';
     }
 
     function updateWarnDistance(val) {
-      state.warnThresholdMeters = parseFloat(val);
-      document.getElementById('warnSliderVal').textContent = `${state.warnThresholdMeters.toFixed(1)} meters`;
-      document.getElementById('statWarnBuffer').textContent = `${state.warnThresholdMeters.toFixed(1)} m`;
-      updateJsonAndArduinoSnippets();
+      state.warnThresholdMeters = Number(val);
+      document.getElementById('warnSliderVal').textContent = `${Number(val).toFixed(1)} meters`;
+      document.getElementById('statWarnBuffer').textContent = `${Number(val).toFixed(1)} m`;
       evaluateGeofence();
-    }
-
-    function updateCoordDisplays() {
-      document.getElementById('headerCoords').textContent =
-        `${state.dogPos.lat.toFixed(5)}, ${state.dogPos.lng.toFixed(5)}`;
     }
 
     function toggleAudio() {
       state.audioEnabled = !state.audioEnabled;
-      const icon = document.getElementById('iconAudio');
-      icon.setAttribute('data-lucide', state.audioEnabled ? 'volume-2' : 'volume-x');
-      icon.classList.toggle('text-emerald-600', state.audioEnabled);
-      icon.classList.toggle('dark:text-emerald-400', state.audioEnabled);
-      icon.classList.toggle('text-slate-400', !state.audioEnabled);
-      lucide.createIcons();
-      showToast(state.audioEnabled ? 'Beep audio enabled' : 'Beep audio muted');
+      showToast(state.audioEnabled ? 'Alert beep enabled' : 'Alert beep muted');
     }
 
     function toggleVibe() {
       state.vibeEnabled = !state.vibeEnabled;
-      const icon = document.getElementById('iconVibe');
-      icon.classList.toggle('text-emerald-600', state.vibeEnabled);
-      icon.classList.toggle('dark:text-emerald-400', state.vibeEnabled);
-      icon.classList.toggle('text-slate-400', !state.vibeEnabled);
-      showToast(state.vibeEnabled ? 'Phone vibration enabled' : 'Phone vibration off');
+      showToast(state.vibeEnabled ? 'Phone vibration enabled' : 'Phone vibration muted');
     }
 
     function toggleTheme() {
       state.darkMode = !state.darkMode;
       document.documentElement.classList.toggle('dark', state.darkMode);
-      const icon = document.getElementById('iconTheme');
-      icon.setAttribute('data-lucide', state.darkMode ? 'sun' : 'moon');
-      lucide.createIcons();
     }
 
     function addLog(message, type = 'info') {
-      const logBox = document.getElementById('eventLog');
+      const logEl = document.getElementById('eventLog');
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      let colorClass = 'text-slate-600 dark:text-slate-300 bg-slate-100/70 dark:bg-slate-800/60';
-      if (type === 'safe') colorClass = 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10';
-      if (type === 'warn') colorClass = 'text-amber-700 dark:text-amber-300 bg-amber-500/15';
-      if (type === 'danger') colorClass = 'text-rose-700 dark:text-rose-300 bg-rose-500/15 font-semibold';
+      const colorClass =
+        type === 'alert'
+          ? 'text-rose-600 dark:text-rose-400 font-semibold'
+          : type === 'warn'
+          ? 'text-amber-600 dark:text-amber-400'
+          : 'text-slate-600 dark:text-slate-300';
 
-      const entry = document.createElement('div');
-      entry.className = `px-2.5 py-1.5 rounded-lg flex items-start justify-between gap-2 ${colorClass}`;
-      entry.innerHTML = `<span>${message}</span><span class="font-mono text-[10px] opacity-70 shrink-0">${time}</span>`;
-      logBox.prepend(entry);
+      const row = document.createElement('div');
+      row.className = `flex items-center justify-between gap-2 py-1 px-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 ${colorClass}`;
+      row.innerHTML = `<span class="truncate">${message}</span><span class="font-mono text-[10px] opacity-65 shrink-0">${time}</span>`;
+      logEl.prepend(row);
     }
 
     function clearEventLog() {
       document.getElementById('eventLog').innerHTML = '';
-    }
-
-    function copyTextById(elementId, successMsg) {
-      const text = document.getElementById(elementId).textContent;
-      const tempArea = document.createElement('textarea');
-      tempArea.value = text;
-      document.body.appendChild(tempArea);
-      tempArea.select();
-      try {
-        document.execCommand('copy');
-        showToast(successMsg);
-      } catch (e) {
-        showToast('Copy failed — select text manually');
-      }
-      document.body.removeChild(tempArea);
     }
 
     let toastTimeout = null;
@@ -1312,14 +1162,122 @@ void loop() {
       const toast = document.getElementById('toastNotification');
       document.getElementById('toastMessage').textContent = msg;
       toast.classList.remove('opacity-0');
+      toast.classList.add('opacity-100');
       clearTimeout(toastTimeout);
       toastTimeout = setTimeout(() => {
+        toast.classList.remove('opacity-100');
         toast.classList.add('opacity-0');
-      }, 2400);
+      }, 2800);
     }
-    window.addEventListener('DOMContentLoaded', () => {
-      locateUserYard();
-    });
+
+    function toggleEspPolling() {
+      const statusBadge = document.getElementById('espPollStatus');
+      const btn = document.getElementById('btnConnectEsp');
+      const url = document.getElementById('espEndpointInput').value.trim();
+
+      if (state.espPolling) {
+        state.espPolling = false;
+        clearInterval(state.espTimer);
+        state.espTimer = null;
+        statusBadge.textContent = 'IDLE';
+        btn.textContent = 'Connect';
+        document.getElementById('connModeBadge').textContent = 'SIMULATOR';
+        return;
+      }
+
+      if (!url) return;
+      state.espPolling = true;
+      statusBadge.textContent = 'POLLING';
+      btn.textContent = 'Stop';
+      document.getElementById('connModeBadge').textContent = 'ESP32 LIVE';
+
+      const pollOnce = async () => {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          const data = await res.json();
+          if (typeof data.lat === 'number' && typeof data.lng === 'number') {
+            setDogPosition(data.lat, data.lng);
+          }
+          if (typeof data.bat === 'number') {
+            document.getElementById('headerBat').textContent = `${Math.round(data.bat)}%`;
+          }
+        } catch (err) {
+          addLog(`ESP32 poll error: ${err.message}`, 'warn');
+        }
+      };
+
+      pollOnce();
+      state.espTimer = setInterval(pollOnce, 2500);
+    }
+
+    function updateJsonAndArduinoSnippets() {
+      const payload = {
+        project: 'MapleCookie',
+        warnBufferMeters: state.warnThresholdMeters,
+        polygon: state.fenceVertices.map(([lat, lng]) => ({ lat, lng })),
+      };
+      document.getElementById('polygonJsonBox').textContent = JSON.stringify(payload, null, 2);
+
+      const verts = state.fenceVertices.length >= 3
+        ? state.fenceVertices
+        : DEFAULT_CENTER.map((_, i) => [DEFAULT_CENTER[0] + (i ? 0.0001 : -0.0001), DEFAULT_CENTER[1]]);
+
+      const cppPts = verts
+        .map(([lat, lng]) => `  {${lat.toFixed(6)}, ${lng.toFixed(6)}}`)
+        .join(',\n');
+
+      document.getElementById('arduinoCodeBox').textContent =
+`// MapleCookie ESP32-C3 + NEO-M8N geofence check (supervised test only)
+#include <Arduino.h>
+#include <TinyGPSPlus.h>
+
+struct LatLng { double lat; double lng; };
+
+const LatLng FENCE[] = {
+${cppPts}
+};
+const int FENCE_COUNT = sizeof(FENCE) / sizeof(FENCE[0]);
+const int MOTOR_PIN = 4; // Drive via NPN transistor + flyback diode
+
+TinyGPSPlus gps;
+HardwareSerial GPSSerial(1);
+
+bool pointInPolygon(double lat, double lng) {
+  bool inside = false;
+  for (int i = 0, j = FENCE_COUNT - 1; i < FENCE_COUNT; j = i++) {
+    bool intersect = ((FENCE[i].lng > lng) != (FENCE[j].lng > lng)) &&
+      (lat < (FENCE[j].lat - FENCE[i].lat) * (lng - FENCE[i].lng) /
+      ((FENCE[j].lng - FENCE[i].lng) + 1e-12) + FENCE[i].lat);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+void setup() {
+  Serial.begin(115200);
+  GPSSerial.begin(9600, SERIAL_8N1, 20, 21);
+  pinMode(MOTOR_PIN, OUTPUT);
+  digitalWrite(MOTOR_PIN, LOW);
+}
+
+void loop() {
+  while (GPSSerial.available() > 0) {
+    gps.encode(GPSSerial.read());
+  }
+  if (gps.location.isUpdated() && gps.location.isValid()) {
+    bool safe = pointInPolygon(gps.location.lat(), gps.location.lng());
+    digitalWrite(MOTOR_PIN, safe ? LOW : HIGH);
+  }
+}`;
+    }
+
+    function copyTextById(elId, toastMsg) {
+      const txt = document.getElementById(elId).textContent;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(() => showToast(toastMsg)).catch(() => showToast('Copy failed'));
+      }
+    }
   </script>
 </body>
 </html>
